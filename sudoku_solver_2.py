@@ -48,32 +48,38 @@ def build_definite_kb(n, box_h, box_w, givens):
 
     newKB = PropDefiniteKB()
 
+    # Loop through each cell on sudoku board
     for r in range(1,n+1):
         for c in range(1,n+1):
+            # "The givens cells hold their stated value"
             if (r,c) in givens:
                 newKB.tell(atom('Is', r, c, givens[(r,c)]))
 
-            
+            # Defining coordinates of top left cell of each box
             boxBaseCol = (c-1)//box_w * box_w + 1
             boxBaseRow = (r-1)//box_h * box_h + 1
             
+            # Looping through each possible number
             for num in range(1,n+1):
-                current = atom('Is', r, c, num)
+                current = atom('Is', r, c, num)     # current cell of interest
 
-                rowClauses = []
-                colClauses = []
-                boxClauses = []
-                otherClauses = []
+                # Define empty list to hold conjunction of clauses to add into premise. 
+                rowClauses = []     # Holds premise for "No two cells in the same row hold the same value."
+                colClauses = []     # Holds premise for "No two cells in the same column hold the same value."
+                boxClauses = []     # Holds premise for "No two cells in the same box hold the same value."
+                otherClauses = []   # Holds premise for "Every cell has at least one value from {1, . . . , n}"
+
+                # Loop through each possible number
                 for n2 in range(1,n+1):
                     if c != n2:
-                        rowClauses.append(atom('Not', r, n2, num))
-                        newKB.tell(Expr('==>', current, atom('Not', r, n2, num)))
+                        rowClauses.append(atom('Not', r, n2, num))                  
+                        newKB.tell(Expr('==>', current, atom('Not', r, n2, num)))   # current cell is num -> other cells in same row not num
                     if r != n2:
                         colClauses.append(atom('Not', n2, c, num))
-                        newKB.tell(Expr('==>', current, atom('Not', n2, c, num)))
+                        newKB.tell(Expr('==>', current, atom('Not', n2, c, num)))   # current cell is num -> other cells in same col not num
                     if num != n2:
                         otherClauses.append(atom('Not', r, c, n2))
-                        newKB.tell(Expr('==>', current, atom('Not', r, c, n2)))
+                        newKB.tell(Expr('==>', current, atom('Not', r, c, n2)))     # current cell is num -> current cell is not other nums
 
                 for currRow in range(boxBaseRow, boxBaseRow + box_h):
                     for currCol in range(boxBaseCol, boxBaseCol + box_w):
@@ -82,20 +88,20 @@ def build_definite_kb(n, box_h, box_w, givens):
                         boxClauses.append(atom('Not', currRow, currCol, num))
 
                         if currRow != r and currCol != c:
-                            newKB.tell(Expr('==>', current, atom('Not', currRow, currCol, num)))
+                            newKB.tell(Expr('==>', current, atom('Not', currRow, currCol, num)))    # current cell is num -> other cells in same box not num
 
-
+                # combine literals using conjunctions and tells KB: conjoined literals -> is num
                 newRowClause = associate('&', rowClauses)
-                newKB.tell(Expr('==>', newRowClause, atom('Is', r, c, num)))
+                newKB.tell(Expr('==>', newRowClause, atom('Is', r, c, num)))        # other cells in same row not num -> current cell is num
 
                 newColClause = associate('&', colClauses)
-                newKB.tell(Expr('==>', newColClause, atom('Is', r, c, num)))
+                newKB.tell(Expr('==>', newColClause, atom('Is', r, c, num)))        # other cells is same col not num -> current cell is num
 
                 newBoxClause = associate('&', boxClauses)
-                newKB.tell(Expr('==>', newBoxClause, atom('Is', r, c, num)))
+                newKB.tell(Expr('==>', newBoxClause, atom('Is', r, c, num)))        # other cells in same box not num -> current cell is num
 
                 newOtherClause = associate('&', otherClauses)
-                newKB.tell(Expr('==>', newOtherClause, atom('Is', r, c, num)))
+                newKB.tell(Expr('==>', newOtherClause, atom('Is', r, c, num)))      # current cell is not all other nums -> current cell is num
 
     return newKB
 
@@ -113,7 +119,7 @@ def solve_full_grid_fc(n, box_h, box_w, givens):
     dict[(int, int), int] -- {(row, col): value} for every cell
     """
     givens = dict(givens)
-    defKB = build_definite_kb(n, box_h, box_w, givens)
+    defKB = build_definite_kb(n, box_h, box_w, givens)      # Build definite knowledge base
 
 
     ## naive method without guessing/PQ
@@ -137,59 +143,77 @@ def solve_full_grid_fc(n, box_h, box_w, givens):
     ####
     # adding in heuristics
 
-    # create sets to know what values not to check for
-    notRow = [set() for _ in range(n)]
-    notCol = [set() for _ in range(n)]
-    notBox = [set() for _ in range(n)]
-    solved = [[False] * n for _ in range(n)]
+    # create sets to know what values not to check for. Stores set of values present in each row/col/box
+    usedInRow = [set() for _ in range(n)]
+    usedInCol = [set() for _ in range(n)]
+    usedInBox = [set() for _ in range(n)]
+    solved = [[False] * n for _ in range(n)]    # n * n array to store if cell is solved
+    visited = [[False] * n for _ in range(n)]
 
-
+    # Fill usedInRow/usedInCol/usedInBox/solved based on initial given values
     for k,v in givens.items():
         r, c = k
-        notRow[r-1].add(v)
-        notCol[c-1].add(v)
-        notBox[((r-1)//box_h)*box_h + (c-1)//box_w].add(v)
+        usedInRow[r-1].add(v)
+        usedInCol[c-1].add(v)
+        usedInBox[((r-1)//box_h)*box_h + (c-1)//box_w].add(v)
         solved[r-1][c-1] = True
+        visited[r-1][c-1] = True
 
-    allSet = set(range(1, n+1))
+    allSet = set(range(1, n+1)) # Set with numbers 1-9
 
-    # create min priority queue based on number of available choices
+    # Init min priority queue based on number of available choices per cell
     PQ = PriorityQueue('min', lambda x: x[2])
     numChoices = [[None] * n for _ in range(n)]
 
+    # Fill up PQ
     for r in range(1,n+1):
         for c in range(1,n+1):
-            numChoices[r-1][c-1] = len(allSet-(notRow[r-1]|notCol[c-1]|notBox[((r-1)//box_h)*box_h + (c-1)//box_w]))
-            PQ.append((r,c,numChoices[r-1][c-1]))
+            numChoices[r-1][c-1] = len(allSet-(usedInRow[r-1]|usedInCol[c-1]|usedInBox[((r-1)//box_h)*box_h + (c-1)//box_w]))
+            if not solved[r-1][c-1]:
+                PQ.append((r,c,numChoices[r-1][c-1]))
     
+    # Loop through while PQ still has items/agenda
     while len(PQ) > 0:
+        # Break if puzzle is solved
         if len(givens) >= n**2:
             break
+
         r,c,num = PQ.pop()
+
+        # Skip item/agenda if cell is already solved
         if solved[r-1][c-1]:
             continue
 
-        if num != numChoices[r - 1][c - 1]:
+        # Skip item/agenda if cell has already been visited 
+        if visited[r-1][c-1]:
             continue
 
-        for v in allSet-(notRow[r-1]|notCol[c-1]|notBox[((r-1)//box_h)*box_h + (c-1)//box_w]):
+        visited[r-1][c-1] = True
+
+        # for each possible number for cell at r, c
+        for v in allSet-(usedInRow[r-1]|usedInCol[c-1]|usedInBox[((r-1)//box_h)*box_h + (c-1)//box_w]):
+            # check if KB entails number v using FC
             if pl_fc_entails(defKB, atom('Is', r, c, v)):
                 defKB.tell(atom('Is', r, c, v))
                 givens[(r,c)] = v
 
-                notRow[r-1].add(v)
-                notCol[c-1].add(v)
-                notBox[((r-1)//box_h)*box_h + (c-1)//box_w].add(v)
+                # update not sets and solved with new value
+                usedInRow[r-1].add(v)
+                usedInCol[c-1].add(v)
+                usedInBox[((r-1)//box_h)*box_h + (c-1)//box_w].add(v)
                 solved[r-1][c-1] = True
 
+                # check affected cells in same row/col/box and if the number of possible numbers has decreased,
+                # add a new entry to the priority queue
                 for n2 in range(1, n+1):
-                    newSet = allSet-(notRow[r-1]|notCol[n2-1]|notBox[((r-1)//box_h)*box_h + (n2-1)//box_w])
-                    if numChoices[r-1][n2-1] > len(newSet) and n2 != c:
+                    newSet = allSet-(usedInRow[r-1]|usedInCol[n2-1]|usedInBox[((r-1)//box_h)*box_h + (n2-1)//box_w])
+                    if not visited[r-1][n2-1] and numChoices[r-1][n2-1] > len(newSet) and n2 != c:
+                        
                         numChoices[r-1][n2-1] = len(newSet)
                         PQ.append((r,n2,len(newSet)))
 
-                    newSet = allSet-(notRow[n2-1]|notCol[c-1]|notBox[((n2-1)//box_h)*box_h + (c-1)//box_w])
-                    if numChoices[n2-1][c-1] > len(newSet) and n2 != r:
+                    newSet = allSet-(usedInRow[n2-1]|usedInCol[c-1]|usedInBox[((n2-1)//box_h)*box_h + (c-1)//box_w])
+                    if not visited[n2-1][c-1] and numChoices[n2-1][c-1] > len(newSet) and n2 != r:
                         numChoices[n2-1][c-1] = len(newSet)
                         PQ.append((n2,c,len(newSet)))
 
@@ -199,8 +223,8 @@ def solve_full_grid_fc(n, box_h, box_w, givens):
                     for newCol in range(boxBaseCol, boxBaseCol + box_w):
                         if (newRow, newCol) == (r, c):
                             continue
-                        newSet = allSet-(notRow[newRow-1]|notCol[newCol-1]|notBox[((newRow-1)//box_h)*box_h + (newCol-1)//box_w])
-                        if numChoices[newRow-1][newCol-1] > len(newSet):
+                        newSet = allSet-(usedInRow[newRow-1]|usedInCol[newCol-1]|usedInBox[((newRow-1)//box_h)*box_h + (newCol-1)//box_w])
+                        if not visited[newRow-1][newCol-1] and numChoices[newRow-1][newCol-1] > len(newSet):
                             numChoices[newRow-1][newCol-1] = len(newSet)
                             PQ.append((newRow,newCol,len(newSet)))
 
