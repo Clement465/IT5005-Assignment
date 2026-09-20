@@ -26,9 +26,68 @@ def build_general_kb(n, box_h, box_w, givens):
     -------
     PropKB
     """
-    raise NotImplementedError(
-        'build_general_kb: encode the puzzle as general clauses'
-    )
+    kb = PropKB()
+
+    # Comment the below piece of code if none of the queries reference 'Not' symbol
+    for r in range(1, n + 1):
+        for c in range(1, n + 1):
+            for v in range(1, n + 1):
+                kb.tell(atom('Is', r, c, v) |'<=>'| ~atom('Not', r, c, v))
+
+    # Every cell has at least one value from {1, . . . , n}
+    for r in range(1, n + 1):
+        for c in range(1, n + 1):
+            clause = atom('Is', r, c, 1)
+            for v in range(2, n + 1):
+                clause |= atom('Is', r, c, v)
+            kb.tell(clause)
+
+    # Every cell has at most one value from {1, . . . , n}
+    for r in range(1, n + 1):
+        for c in range(1, n + 1):
+            for v1 in range(1, n):
+                for v2 in range(v1 + 1, n + 1):
+                    clause = atom('Is', r, c, v1) | '==>' | ~atom('Is', r, c, v2)
+                    kb.tell(clause)
+
+    # No two cells in the same row hold the same value
+    for r in range(1, n + 1):
+        for v in range(1, n + 1):
+            for c1 in range(1, n):
+                for c2 in range(c1 + 1, n + 1):
+                    clause = atom('Is', r, c1, v) | '==>' | ~atom('Is', r, c2, v)
+                    kb.tell(clause)
+
+    # No two cells in the same column hold the same value
+    for c in range(1, n + 1):
+        for v in range(1, n + 1):
+            for r1 in range(1, n):
+                for r2 in range(r1 + 1, n + 1):
+                    clause = atom('Is', r1, c, v) | '==>' | ~atom('Is', r2, c, v)
+                    kb.tell(clause)
+
+    # No two cells in the same box hold the same value
+    for box_r in range(1, n + 1, box_h):
+        for box_c in range(1, n + 1, box_w):
+            cells = [
+                (r, c)
+                for r in range(box_r, box_r + box_h)
+                for c in range(box_c, box_c + box_w)
+            ]
+
+            for v in range(1, n + 1):
+                for cell1 in range(len(cells) - 1):
+                    for cell2 in range(cell1 + 1, len(cells)):
+                        r1, c1 = cells[cell1]
+                        r2, c2 = cells[cell2]
+                        clause = atom('Is', r1, c1, v) | '==>' | ~atom('Is', r2, c2, v)
+                        kb.tell(clause)
+
+    # The givens cells hold their stated values.
+    for (row, col), val in givens.items():
+        kb.tell(atom('Is', row, col, val))
+
+    return kb
 
 
 def build_definite_kb(n, box_h, box_w, givens):
