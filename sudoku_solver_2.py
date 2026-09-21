@@ -100,8 +100,9 @@ def build_definite_kb(n, box_h, box_w, givens):
                 newBoxClause = associate('&', boxClauses)
                 newKB.tell(Expr('==>', newBoxClause, atom('Is', r, c, num)))        # other cells in same box not num -> current cell is num
 
-                newOtherClause = associate('&', otherClauses)
-                newKB.tell(Expr('==>', newOtherClause, atom('Is', r, c, num)))      # current cell is not all other nums -> current cell is num
+                if (r,c) not in givens:
+                    newOtherClause = associate('&', otherClauses)
+                    newKB.tell(Expr('==>', newOtherClause, atom('Is', r, c, num)))      # current cell is not all other nums -> current cell is num
 
     return newKB
 
