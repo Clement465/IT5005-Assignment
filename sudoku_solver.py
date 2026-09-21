@@ -26,9 +26,96 @@ def build_general_kb(n, box_h, box_w, givens):
     -------
     PropKB
     """
-    raise NotImplementedError(
-        'build_general_kb: encode the puzzle as general clauses'
-    )
+    kb = PropKB()
+
+    # Comment the below piece of code if none of the queries reference 'Not' symbol
+    # Is111 <=> ~Not111, Is112 <=> ~Not112 ... for every cell and value
+    for r in range(1, n + 1):
+        for c in range(1, n + 1):
+            for v in range(1, n + 1):
+                kb.tell(atom('Is', r, c, v) |'<=>'| ~atom('Not', r, c, v))
+
+    # Every cell has at least one value from {1, . . . , n}
+    # Is111 | Is112 | Is113 ... Is118 | Is119
+    # Is121 | Is122 | Is123 ... Is128 | Is129
+    # .
+    # .
+    # for every cell
+    for r in range(1, n + 1):
+        for c in range(1, n + 1):
+            clause = atom('Is', r, c, 1)
+            for v in range(2, n + 1):
+                clause |= atom('Is', r, c, v)
+            kb.tell(clause)
+
+    # Every cell has at most one value from {1, . . . , n}
+    # Is111 => ~Is112, Is111 => ~Is113 ... Is111 => ~Is119
+    # Is112 => ~Is113, Is112 => ~Is114 ... Is112 => ~Is119
+    # .
+    # .
+    # Is118 => ~Is119
+    # for every cell and value combination
+    for r in range(1, n + 1):
+        for c in range(1, n + 1):
+            for v1 in range(1, n):
+                for v2 in range(v1 + 1, n + 1):
+                    clause = atom('Is', r, c, v1) | '==>' | ~atom('Is', r, c, v2)
+                    kb.tell(clause)
+
+    # No two cells in the same row hold the same value
+    # Is111 => ~Is121, Is111 => ~Is131 ... Is111 => ~Is191
+    # Is112 => ~Is122, Is112 => ~Is132 ... Is112 => ~Is192
+    # .
+    # .
+    # Is119 => ~Is129, Is119 => ~Is139 ... Is119 => ~Is199
+    # for every row and value combination
+    for r in range(1, n + 1):
+        for v in range(1, n + 1):
+            for c1 in range(1, n):
+                for c2 in range(c1 + 1, n + 1):
+                    clause = atom('Is', r, c1, v) | '==>' | ~atom('Is', r, c2, v)
+                    kb.tell(clause)
+
+    # No two cells in the same column hold the same value
+    # Is111 => ~Is211, Is111 => ~Is311 ... Is111 => ~Is911
+    # Is112 => ~Is212, Is112 => ~Is312 ... Is112 => ~Is912
+    # .
+    # .
+    # Is119 => ~Is219, Is119 => ~Is319 ... Is119 => ~Is919
+    # for every col and value combination
+    for c in range(1, n + 1):
+        for v in range(1, n + 1):
+            for r1 in range(1, n):
+                for r2 in range(r1 + 1, n + 1):
+                    clause = atom('Is', r1, c, v) | '==>' | ~atom('Is', r2, c, v)
+                    kb.tell(clause)
+
+    # No two cells in the same box hold the same value
+    # Is111 => ~Is221 ... with every cell within its box
+    # for every box and value combination
+    for box_r in range(1, n + 1, box_h):
+        for box_c in range(1, n + 1, box_w):
+            cells = [
+                (r, c)
+                for r in range(box_r, box_r + box_h)
+                for c in range(box_c, box_c + box_w)
+            ]
+
+            for v in range(1, n + 1):
+                for cell1 in range(len(cells) - 1):
+                    for cell2 in range(cell1 + 1, len(cells)):
+                        r1, c1 = cells[cell1]
+                        r2, c2 = cells[cell2]
+                        clause = atom('Is', r1, c1, v) | '==>' | ~atom('Is', r2, c2, v)
+                        kb.tell(clause)
+
+    # The givens cells hold their stated values.
+    # If (2, 3) is given as 7 then tell Is237
+    # for every given
+    for (row, col), val in givens.items():
+        kb.tell(atom('Is', row, col, val))
+
+    return kb
 
 
 def build_definite_kb(n, box_h, box_w, givens):
