@@ -241,7 +241,7 @@ def solve_full_grid_fc(n, box_h, box_w, givens):
     # )
 
 
-def pl_bc_entails(kb: PropDefiniteKB, q, n, visited=None, failed=None):
+def pl_bc_entails(kb: PropDefiniteKB, q: Expr, n: int, visited=None, failed=None) -> bool:
     """Your own backward-chaining implementation.
     Parameters
     ----------
@@ -300,7 +300,7 @@ def pl_bc_entails(kb: PropDefiniteKB, q, n, visited=None, failed=None):
     return False
 
 
-def solve_full_grid_bc(n, box_h, box_w, givens,print_state=False):
+def solve_full_grid_bc(n, box_h, box_w, givens,print_state=False) -> dict[tuple[int,int], int]:
     """Solve the whole puzzle using build_definite_kb + your own pl_bc_entails.
 
     For each cell, try each candidate value until pl_bc_entails confirms one
@@ -355,7 +355,7 @@ def solve_full_grid_bc(n, box_h, box_w, givens,print_state=False):
                         print("FAILED")
     return ans
 
-def kb_cleanup(kb: PropDefiniteKB,q: Expr,n: int):
+def kb_cleanup(kb: PropDefiniteKB,q: Expr,n: int) -> None:
     """
     Cleans the kb up given a fact 'Is/Not'+'r_c_v'
     """
@@ -385,7 +385,7 @@ def kb_cleanup(kb: PropDefiniteKB,q: Expr,n: int):
     for fact in new_facts:
         kb.tell(fact)
 
-def print_sudoku_grid(kb, n):
+def print_sudoku_grid(kb: PropDefiniteKB, n: int) -> None:
     """Reconstruct and print the n x n Sudoku grid from facts in kb.clauses."""
     grid = [['.' for _ in range(n)] for _ in range(n)]
     for c in kb.clauses:
