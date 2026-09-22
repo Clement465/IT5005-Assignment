@@ -104,6 +104,8 @@ def build_definite_kb(n, box_h, box_w, givens):
                     newOtherClause = associate('&', otherClauses)
                     newKB.tell(Expr('==>', newOtherClause, atom('Is', r, c, num)))      # current cell is not all other nums -> current cell is num
 
+    for (r,c), v in givens.items():
+        kb_cleanup(newKB, atom('Is',r,c,v),n)
     return newKB
 
 
@@ -241,7 +243,7 @@ def solve_full_grid_fc(n, box_h, box_w, givens):
     # )
 
 
-def pl_bc_entails(kb: PropDefiniteKB, q: Expr, n: int, visited=None, failed=None) -> bool:
+def pl_bc_entails(kb: PropDefiniteKB, q: Expr, n: int = None, visited=None, failed=None) -> bool:
     """Your own backward-chaining implementation.
     Parameters
     ----------
@@ -252,6 +254,8 @@ def pl_bc_entails(kb: PropDefiniteKB, q: Expr, n: int, visited=None, failed=None
     -------
     bool
     """
+    if n is None:
+        n = extract_n(kb)
     if visited is None: 
         visited = set()
     if failed is None:
@@ -313,9 +317,6 @@ def solve_full_grid_bc(n, box_h, box_w, givens,print_state=False) -> dict[tuple[
     """
     kb = build_definite_kb(n,box_h,box_w,givens)
     ans = dict(givens)
-
-    for (r,c), v in givens.items():
-        kb_cleanup(kb, atom('Is',r,c,v),n)
 
     if print_state:
         print("--- Initial Board State ---")
@@ -384,6 +385,14 @@ def kb_cleanup(kb: PropDefiniteKB,q: Expr,n: int) -> None:
         kb.retract(clause)
     for fact in new_facts:
         kb.tell(fact)
+
+def extract_n(kb) -> int:
+    """Iteratively probe diagonal symbols (k, k, k) to determine the exact grid size n."""
+    symbols = {str(s.op) for clause in kb.clauses for s in prop_symbols(clause)}
+    k = 1
+    while f'Is{k}_{k}_{k}' in symbols or f'Not{k}_{k}_{k}' in symbols:
+        k += 1
+    return k - 1
 
 def print_sudoku_grid(kb: PropDefiniteKB, n: int) -> None:
     """Reconstruct and print the n x n Sudoku grid from facts in kb.clauses."""
