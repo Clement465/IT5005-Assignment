@@ -241,9 +241,8 @@ def solve_full_grid_fc(n, box_h, box_w, givens):
     # )
 
 
-def pl_bc_entails(kb, query):
+def pl_bc_entails(kb: PropDefiniteKB, q, n, visited=None, failed=None):
     """Your own backward-chaining implementation.
-
     Parameters
     ----------
     kb : PropDefiniteKB
@@ -253,12 +252,55 @@ def pl_bc_entails(kb, query):
     -------
     bool
     """
-    raise NotImplementedError(
-        'pl_bc_entails: implement backward chaining, soundly'
-    )
+    if visited is None: 
+        visited = set()
+    if failed is None:
+        failed = set()
+
+    if q in kb.clauses: 
+        return True
+    if q in failed or q in visited: 
+        return False #recursive and failure cycle prevention
+
+    q_str = str(q.op)
+    is_not = q_str.startswith('Not')
+    prefix_len = 3 if is_not else 2
+    opp_prefix = 'Is' if is_not else 'Not'
+    if atom(opp_prefix, *q_str[prefix_len:].split('_')) in kb.clauses:
+        failed.add(q)
+        return False
+
+    visited.add(q)
+
+    clauses_with_q = [a_c for c in kb.clauses if (a_c:=parse_definite_clause(c))[1] == q]
+    if not clauses_with_q:
+        visited.remove(q)
+        failed.add(q)
+        return False
+    
+    for a, _ in clauses_with_q:
+        unique_symbols = {sym for expr in a for sym in prop_symbols(expr)}
+        count = len(unique_symbols)
+        
+        for p in unique_symbols:
+            if pl_bc_entails(kb, p, n, visited, failed):
+                count -= 1
+            else:
+                break
+        
+        if count == 0:
+            if q not in kb.clauses:
+                kb.tell(q)
+                kb_cleanup(kb, q, n)
+            visited.remove(q)
+            return True
+
+    visited.remove(q)
+    failed.add(q)
+    return False
 
 
-def solve_full_grid_bc(n, box_h, box_w, givens):
+def solve_full_grid_bc(n, box_h, box_w, givens,print_state=False):
     """Solve the whole puzzle using build_definite_kb + your own pl_bc_entails.
 
     For each cell, try each candidate value until pl_bc_entails confirms one
@@ -269,6 +311,94 @@ def solve_full_grid_bc(n, box_h, box_w, givens):
     -------
     dict[(int, int), int] -- {(row, col): value} for every cell
     """
-    raise NotImplementedError(
-        'solve_full_grid_bc: solve every cell with backward chaining'
-    )
+    kb = build_definite_kb(n,box_h,box_w,givens)
+    ans = dict(givens)
+
+    for (r,c), v in givens.items():
+        kb_cleanup(kb, atom('Is',r,c,v),n)
+
+    if print_state:
+        print("--- Initial Board State ---")
+        print_sudoku_grid(kb,n)
+
+    changed = True
+    while changed:
+        changed = False
+        for r in range(1,n+1):
+            for c in range(1,n+1):
+                if (r,c) in ans:
+                    continue
+
+                solved = False
+                for v in range(1,n+1):
+                    if atom('Is',r,c,v) in kb.clauses:
+                        ans[(r,c)] = v
+                        solved = True
+                        changed = True
+                        break
+                if solved: continue
+
+                for v in range(1,n+1):
+                    if atom('Not',r,c,v) in kb.clauses:
+                        continue
+                    q = atom('Is',r,c,v)
+                    if print_state:
+                        print(f"Testing Cell {(r,c)} = {v} ... ", end="")
+                    if pl_bc_entails(kb,q,n):
+                        ans[(r,c)] = v
+                        changed = True
+                        if print_state: 
+                            print(f"SUCESS\n --- Curr Board State ---")
+                            print_sudoku_grid(kb,n)
+                        break
+                    elif print_state:
+                        print("FAILED")
+    return ans
+
+def kb_cleanup(kb: PropDefiniteKB,q: Expr,n: int):
+    """
+    Cleans the kb up given a fact 'Is/Not'+'r_c_v'
+    """
+    q_str = str(q.op)
+    is_not = q_str.startswith("Not")
+    prefix_len = 3 if is_not else 2
+    r,c,v = map(int,q_str[prefix_len:].split('_'))
+
+    tbd_literals,new_facts,tbd_facts = set(),[],[]
+    tbd_literals.add(atom('Is' if is_not else 'Not',r,c,v))
+
+    if not is_not:
+        for i in range(1,n+1):
+            if i !=v:
+                tbd_literals.add(atom('Is',r,c,i))
+
+    for clause in kb.clauses:
+        a,c = parse_definite_clause(clause)
+        if c in tbd_literals or any(s in tbd_literals for s in a):
+            tbd_facts.append(clause)
+        elif(len(a) == 1 and q in a):
+            if c not in kb.clauses and c not in new_facts:
+                new_facts.append(c)
+            tbd_facts.append(clause)
+    for clause in tbd_facts:
+        kb.retract(clause)
+    for fact in new_facts:
+        kb.tell(fact)
+
+def print_sudoku_grid(kb, n):
+    """Reconstruct and print the n x n Sudoku grid from facts in kb.clauses."""
+    grid = [['.' for _ in range(n)] for _ in range(n)]
+    for c in kb.clauses:
+        op_str = str(c.op)
+        if is_prop_symbol(c.op) and op_str.startswith('Is'):
+            parts = op_str[2:].split('_')
+            if len(parts) == 3:
+                r, col, val = map(int, parts)
+                grid[r - 1][col - 1] = str(val)
+
+    print("-" * (2 * n + 1))
+    for row in grid:
+        print("| " + " ".join(row) + " |")
+    print("-" * (2 * n + 1))
+
+
