@@ -113,6 +113,63 @@ def build_definite_kb(n, box_h, box_w, givens):
     #     'build_definite_kb: encode the puzzle as definite clauses'
     # )
 
+def fact_to_cell(fact):
+    name = fact.op.removeprefix('Is')
+    r, c, v = map(int, name.split('_'))
+    return {(r, c): v}
+
+def pl_fc_entails_all(kb):
+    """
+    Edited pl_fc_entails to keep running until all possible facts are determined and return a dictionary of all values for all deducible cells
+
+    Arguments
+    kb: definite knowledge base
+
+    Returns
+    dict[(int, int), int] -- {(row, col): value}, 1-indexed
+    """
+    count = {c: len(conjuncts(c.args[0])) for c in kb.clauses if c.op == '==>'}
+    inferred = defaultdict(bool)
+    agenda = [s for s in kb.clauses if is_prop_symbol(s.op)]
+    is_facts = [s for s in agenda if s.op.startswith('Is')]
+    while agenda:
+        p = agenda.pop()
+        if not inferred[p]:
+            inferred[p] = True
+            for c in kb.clauses_with_premise(p):
+                count[c] -= 1
+                if count[c] == 0:
+                    agenda.append(c.args[1])
+                    if c.args[1].op.startswith('Is'):
+                        is_facts.append(c.args[1])
+    results = {}
+
+    for fact in is_facts:
+        for k, v in fact_to_cell(fact).items():
+            if k in results and results[k] != v:
+                raise ValueError(f"Conflicting values for cell {k}: {results[k]} vs {v}")
+            results[k] = v
+
+    return results
+
+
+def solve_full_grid_fc_one_pass(n, box_h, box_w, givens):
+    """Solve the whole puzzle using build_definite_kb + pl_fc_entails_all.
+
+    Returns
+    -------
+    dict[(int, int), int] -- {(row, col): value} for every cell
+    """
+    givens = dict(givens)
+    defKB = build_definite_kb(n, box_h, box_w, givens)      # Build definite knowledge base
+
+    results = pl_fc_entails_all(defKB)
+
+    if len(results) != n**2:
+        raise ValueError(f"Could only determine {len(results)} of {n**2} cells")
+
+    return results
+
 
 def solve_full_grid_fc(n, box_h, box_w, givens):
     """Solve the whole puzzle using build_definite_kb + pl_fc_entails.
