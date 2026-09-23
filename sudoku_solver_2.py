@@ -299,8 +299,7 @@ def solve_full_grid_fc(n, box_h, box_w, givens):
     #     'solve_full_grid_fc: solve every cell with forward chaining'
     # )
 
-
-def pl_bc_entails(kb: PropDefiniteKB, q: Expr, n: int = None, visited=None, failed=None) -> bool:
+def pl_bc_entails(kb: PropDefiniteKB, q: Expr, n: int = None, visited=None,failed=None) -> bool:
     """Your own backward-chaining implementation.
     Parameters
     ----------
@@ -338,13 +337,10 @@ def pl_bc_entails(kb: PropDefiniteKB, q: Expr, n: int = None, visited=None, fail
         visited.remove(q)
         failed.add(q)
         return False
-    
     for a, _ in clauses_with_q:
-        unique_symbols = {sym for expr in a for sym in prop_symbols(expr)}
-        count = len(unique_symbols)
-        
-        for p in unique_symbols:
-            if pl_bc_entails(kb, p, n, visited, failed):
+        count = len(a)
+        for p in a:
+            if pl_bc_entails(kb, p, n, visited,failed):
                 count -= 1
             else:
                 break
@@ -353,6 +349,7 @@ def pl_bc_entails(kb: PropDefiniteKB, q: Expr, n: int = None, visited=None, fail
             if q not in kb.clauses:
                 kb.tell(q)
                 kb_cleanup(kb, q, n)
+                failed.clear() #New facts may be able to prove past unprovable facts
             visited.remove(q)
             return True
 
