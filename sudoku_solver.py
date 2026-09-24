@@ -28,13 +28,6 @@ def build_general_kb(n, box_h, box_w, givens):
     """
     kb = PropKB()
 
-    # Comment the below piece of code if none of the queries reference 'Not' symbol
-    # Is111 <=> ~Not111, Is112 <=> ~Not112 ... for every cell and value
-    for r in range(1, n + 1):
-        for c in range(1, n + 1):
-            for v in range(1, n + 1):
-                kb.tell(atom('Is', r, c, v) |'<=>'| ~atom('Not', r, c, v))
-
     # Every cell has at least one value from {1, . . . , n}
     # Is111 | Is112 | Is113 ... Is118 | Is119
     # Is121 | Is122 | Is123 ... Is128 | Is129
