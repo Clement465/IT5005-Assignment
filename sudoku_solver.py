@@ -28,13 +28,6 @@ def build_general_kb(n, box_h, box_w, givens):
     """
     kb = PropKB()
 
-    # Comment the below piece of code if none of the queries reference 'Not' symbol
-    # Is111 <=> ~Not111, Is112 <=> ~Not112 ... for every cell and value
-    for r in range(1, n + 1):
-        for c in range(1, n + 1):
-            for v in range(1, n + 1):
-                kb.tell(atom('Is', r, c, v) |'<=>'| ~atom('Not', r, c, v))
-
     # Every cell has at least one value from {1, . . . , n}
     # Is111 | Is112 | Is113 ... Is118 | Is119
     # Is121 | Is122 | Is123 ... Is128 | Is129
@@ -196,10 +189,6 @@ def build_definite_kb(n, box_h, box_w, givens):
     return newKB
 
 
-    # raise NotImplementedError(
-    #     'build_definite_kb: encode the puzzle as definite clauses'
-    # )
-
 def fact_to_cell(fact):
     name = fact.op.removeprefix('Is')
     r, c, v = map(int, name.split('_'))
@@ -258,7 +247,83 @@ def solve_full_grid_fc_one_pass(n, box_h, box_w, givens):
     return results
 
 
-def solve_full_grid_fc(n, box_h, box_w, givens):
+def pl_fc_entails_optimized(kb, q):
+    """
+    [Figure 7.15]
+    Use forward chaining to see if a PropDefiniteKB entails symbol q.
+    Update kb as new symbols are derived.
+    >>> pl_fc_entails(horn_clauses_KB, expr('Q'))
+    True
+    """
+    count = {c: len(conjuncts(c.args[0])) for c in kb.clauses if c.op == '==>'}
+    inferred = defaultdict(bool)
+    agenda = [s for s in kb.clauses if is_prop_symbol(s.op)]
+    while agenda:
+        p = agenda.pop()
+        if p == q:
+            return True
+        if not inferred[p]:
+            inferred[p] = True
+            for c in kb.clauses_with_premise(p):
+                count[c] -= 1
+                if count[c] == 0:
+                    derived_fact = c.args[1]
+                    kb.tell(derived_fact)
+                    kb.retract(c)
+                    agenda.append(derived_fact)
+    return False
+
+
+def solve_full_grid_fc(n, box_h, box_w, givens, print_state=False):
+    """Solve the whole puzzle using build_definite_kb + pl_fc_entails.
+    
+    Returns
+    -------
+    dict[(int, int), int] -- {(row, col): value} for every cell
+    """
+    kb = build_definite_kb(n,box_h,box_w,givens)
+    ans = dict(givens)
+
+    if print_state:
+        print("--- Initial Board State ---")
+        print_sudoku_grid(kb,n)
+    
+    changed = True
+    while changed:
+        changed = False
+        for r in range(1,n+1):
+            for c in range(1,n+1):
+                if (r,c) in ans:
+                    continue
+
+                solved = False
+                for v in range(1,n+1):
+                    if atom('Is',r,c,v) in kb.clauses:
+                        ans[(r,c)] = v
+                        solved = True
+                        changed = True
+                        break
+                if solved: continue
+
+                for v in range(1,n+1):
+                    if atom('Not',r,c,v) in kb.clauses:
+                        continue
+                    q = atom('Is',r,c,v)
+                    if print_state:
+                        print(f"Testing Cell {(r,c)} = {v} ... ", end="")
+                    if pl_fc_entails_optimized(kb,q):
+                        ans[(r,c)] = v
+                        changed = True
+                        if print_state: 
+                            print(f"SUCESS\n --- Curr Board State ---")
+                            print_sudoku_grid(kb,n)
+                        break
+                    elif print_state:
+                        print("FAILED")
+    return ans
+
+
+def solve_full_grid_fc_original(n, box_h, box_w, givens):
     """Solve the whole puzzle using build_definite_kb + pl_fc_entails.
 
     Returns
