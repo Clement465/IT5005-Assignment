@@ -1,10 +1,17 @@
 import json
 import re
+import threading
 import time
 from collections import defaultdict
 from pathlib import Path
 
 import streamlit as st
+try:
+    # Lets the warm-up thread use st.cache_resource without log warnings. It's an
+    # internal module, so if a later Streamlit moves it the app still runs.
+    from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ctx
+except ImportError:
+    add_script_run_ctx = get_script_run_ctx = None
 from utils import *
 from logic_ import *
 from sudoku_solver import (
@@ -19,7 +26,8 @@ from sudoku_solver import (
 
 st.set_page_config(page_title='Sudoku Solver')
 st.title('Sudoku Solver')
-st.caption('Propositional logic on Sudoku: forward and backward chaining over a definite (Horn) knowledge base.')
+st.caption('IT5005 Assignment 1, Group 1. Propositional logic on Sudoku: forward and backward chaining '
+           'over a definite (Horn) knowledge base.')
 
 
 # ---------------------------------------------------------------------------
@@ -45,18 +53,20 @@ n, box_h, box_w, pool = load_pool()
 GIVEN_STYLE = 'font-weight:700;color:#202124;background:#e8eaed'
 SOLVED_STYLE = 'color:#1a73e8;background:#ffffff'
 ASKED_STYLE = 'background:#fde7c8'
+MARKED_STYLE = 'background:#f8d7d3'
 
 
-def board_html(givens, filled=None, asked=None):
+def board_html(givens, filled=None, asked=None, marked=(), size=40):
     # Givens are bold on grey, cells a solver worked out are blue, and the
-    # cell asked about in section 3/4 is shaded orange.
+    # cell asked about in section 3/4 is shaded orange. Tutor mode shades the
+    # cells behind a step red.
     filled = filled or {}
     rows = []
     for r in range(1, n + 1):
         cells = []
         for c in range(1, n + 1):
-            style = ['width:40px', 'height:40px', 'padding:0', 'text-align:center', 'font-size:20px',
-                     'border:1px solid #9aa0a6', SOLVED_STYLE]
+            style = [f'width:{size}px', f'height:{size}px', 'padding:0', 'text-align:center',
+                     f'font-size:{size // 2}px', 'border:1px solid #9aa0a6', SOLVED_STYLE]
             # thicker lines around each box
             if (r - 1) % box_h == 0:
                 style.append('border-top:3px solid #202124')
@@ -71,6 +81,8 @@ def board_html(givens, filled=None, asked=None):
                 text = givens[(r, c)]
             else:
                 text = filled.get((r, c), '')
+            if (r, c) in marked:
+                style.append(MARKED_STYLE)
             if (r, c) == asked:
                 style.append(ASKED_STYLE)
             cells.append(f'<td style="{";".join(style)}">{text}</td>')
@@ -191,23 +203,32 @@ def clash(r, c, v, cause):
     return f'its box already has a {v} at ({r2},{c2})'
 
 
+def cause_of(fact, reason, givens):
+    # The known value (r2, c2, v2) that rules out Not_r_c_v, or None if there isn't one.
+    _, r, c, v = read_symbol(fact)
+    rule = reason.get(fact)
+    if rule is None:
+        return given_behind(r, c, v, givens)
+    premises = conjuncts(rule.args[0])
+    if len(premises) != 1 or read_symbol(premises[0])[0] != 'Is':
+        return None
+    return read_symbol(premises[0])[1:]
+
+
 def why_not(fact, reason, givens, step_no):
     # Plain-English reason for an elimination fact Not_r_c_v.
     _, r, c, v = read_symbol(fact)
     rule = reason.get(fact)
-    if rule is None:
-        cause = given_behind(r, c, v, givens)
-        if cause is None:
+    cause = cause_of(fact, reason, givens)
+    if cause is None:
+        if rule is None:
             return f'({r},{c}) is not {v} (known from the start)'
-        return f'({r},{c}) is not {v}: {clash(r, c, v, cause)} (given)'
-    premises = conjuncts(rule.args[0])
-    if len(premises) != 1 or read_symbol(premises[0])[0] != 'Is':
         return f'({r},{c}) is not {v} (from the rule {rule})'
-    cause = read_symbol(premises[0])[1:]
-    if givens.get(cause[:2]) == cause[2]:
+    if rule is None or givens.get(cause[:2]) == cause[2]:
         where = ' (given)'
     else:
-        where = f' (step {step_no[premises[0]]})' if premises[0] in step_no else ''
+        premise = conjuncts(rule.args[0])[0]
+        where = f' (step {step_no[premise]})' if premise in step_no else ''
     return f'({r},{c}) is not {v}: {clash(r, c, v, cause)}{where}'
 
 
@@ -228,17 +249,27 @@ def why_is(fact, premises):
 
 def show_steps(target, reason, order, givens):
     # One expander per cell forward chaining had to work out on the way to target.
+    # Each has a small board of the cells found so far: this step's cell is orange,
+    # and the cells whose values rule out its other options are red.
     steps = [f for f in facts_behind(target, reason, order)
              if reason[f] is not None and read_symbol(f)[0] == 'Is']
     step_no = {f: i for i, f in enumerate(steps, start=1)}
     if len(steps) > 1:
         st.write(f'Forward chaining worked out {len(steps)} cells to get there, in this order. '
                  'Open a step to see the eliminations behind it.')
+    st.caption('On each small board, orange is the cell worked out in that step, red cells hold the values '
+               'that rule out its other options, and blue cells were worked out in earlier steps.')
+    found = {}
     for i, fact in enumerate(steps, start=1):
         _, r, c, v = read_symbol(fact)
+        found[(r, c)] = v
         premises = conjuncts(reason[fact].args[0])
+        causes = {cause[:2] for cause in (cause_of(p, reason, givens) for p in premises) if cause}
         with st.expander(f'Step {i}: ({r},{c}) = {v}, {why_is(fact, premises)}', expanded=(i == len(steps))):
-            st.markdown('\n'.join(f'- `{p}`: {why_not(p, reason, givens, step_no)}' for p in premises))
+            board, reasons = st.columns([2, 3])
+            board.markdown(board_html(givens, dict(found), asked=(r, c), marked=causes, size=26),
+                           unsafe_allow_html=True)
+            reasons.markdown('\n'.join(f'- `{p}`: {why_not(p, reason, givens, step_no)}' for p in premises))
             st.caption('Rule fired: ' + ' ∧ '.join(str(p) for p in premises) + f' ⟹ {fact}')
 
 
@@ -253,7 +284,11 @@ def explain(puzzle_index, r, c, v):
         show_steps(target, reason, order, givens)
     elif ruled_out in reason:
         st.error(f'Forward chaining derives `{ruled_out}` instead: ({r},{c}) = {v} is not entailed.')
-        st.markdown(f'- `{ruled_out}`: {why_not(ruled_out, reason, givens, {})}')
+        cause = cause_of(ruled_out, reason, givens)
+        board, why = st.columns([2, 3])
+        board.markdown(board_html(givens, asked=(r, c), marked={cause[:2]} if cause else (), size=26),
+                       unsafe_allow_html=True)
+        why.markdown(f'- `{ruled_out}`: {why_not(ruled_out, reason, givens, {})}')
         rule = reason[ruled_out]
         if rule is not None:
             cause = conjuncts(rule.args[0])[0]
@@ -263,6 +298,29 @@ def explain(puzzle_index, r, c, v):
     else:
         st.warning(f'Forward chaining stops without deciding whether ({r},{c}) = {v}.')
 
+
+@st.cache_resource(show_spinner=False)
+def warm_up():
+    # Start building puzzle 1's KB and tutor trace as soon as the app starts, so
+    # it's usually ready by the time anyone clicks. Only puzzle 1, the one shown
+    # first: building the others in the background would slow down whatever solve
+    # someone runs meanwhile and make its timing wrong. Streamlit locks a cached
+    # value while it's computed, so a click during the build just waits for it.
+    worker = threading.Thread(target=fc_trace, args=(0,), daemon=True)
+    if add_script_run_ctx:
+        add_script_run_ctx(worker, get_script_run_ctx())
+    worker.start()
+    return worker
+
+
+warm_worker = warm_up()
+
+
+def finish_warm_up():
+    # Timings shown in the app shouldn't include a build running alongside them.
+    if warm_worker.is_alive():
+        with st.spinner('Finishing the start-up build of puzzle 1 first, so the timing is fair ...'):
+            warm_worker.join()
 
 if 'solves' not in st.session_state:
     st.session_state.solves = {}      # (puzzle, algorithm) -> (solved grid, seconds)
@@ -301,6 +359,7 @@ algorithm = st.radio('Algorithm', list(SOLVERS), horizontal=True, key='algorithm
                                'one forward pass for the whole grid'])
 if st.button('Solve', type='primary', key='solve'):
     solver = SOLVERS[algorithm]
+    finish_warm_up()
     with st.spinner(f'Running {solver.__name__} (this can take a minute or two) ...'):
         start = time.perf_counter()
         try:
@@ -337,9 +396,9 @@ r = col_r.number_input('Row', min_value=1, max_value=n, value=1, step=1, key='ro
 c = col_c.number_input('Column', min_value=1, max_value=n, value=1, step=1, key='col')
 v = col_v.number_input('Value', min_value=1, max_value=n, value=1, step=1, key='val')
 query = atom('Is', r, c, v)
-st.caption('The first question on a puzzle is slow: backward chaining has to prove everything the cell '
-           'depends on, which takes about a minute or two. It keeps what it proves, so later questions on '
-           'the same puzzle are much quicker. Tutor mode below explains any cell straight away.')
+st.caption('A question about an empty cell can be slow the first time: backward chaining has to prove '
+           'everything that cell depends on, which can take a few minutes. It keeps what it proves, so later '
+           'questions on the same puzzle are much quicker. Tutor mode below explains any cell straight away.')
 
 if st.button(f'Check {query} with pl_bc_entails', key='check'):
     key = (idx, r, c, v)
@@ -347,6 +406,7 @@ if st.button(f'Check {query} with pl_bc_entails', key='check'):
     if not st.session_state.bc_repeat:
         with st.spinner('Building the definite KB for this puzzle (first time only, about 20 s) ...'):
             kb = bc_kb(idx)
+        finish_warm_up()
         with st.spinner(f'Running pl_bc_entails({query}) ...'):
             start = time.perf_counter()
             answer = pl_bc_entails(kb, query)
