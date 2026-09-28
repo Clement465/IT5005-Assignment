@@ -320,6 +320,15 @@ def solve_full_grid_fc(n, box_h, box_w, givens, print_state=False):
                         break
                     elif print_state:
                         print("FAILED")
+
+    expected_cells = n**2
+
+    if len(ans) != expected_cells:
+        raise ValueError(
+            f"Inference stopped with {len(ans)}/{expected_cells} cells solved. "
+            "The current rules could not establish the remaining values."
+        )
+
     return ans
 
 
@@ -560,6 +569,16 @@ def solve_full_grid_bc(n, box_h, box_w, givens,print_state=False) -> dict[tuple[
                         break
                     elif print_state:
                         print("FAILED")
+
+
+    expected_cells = n * n
+
+    if len(ans) != expected_cells:
+        raise ValueError(
+            f"Inference stopped with {len(ans)}/{expected_cells} cells solved. "
+            "The current rules could not establish the remaining values."
+        )
+    
     return ans
 
 def kb_cleanup(kb: PropDefiniteKB,q: Expr,n: int) -> None:

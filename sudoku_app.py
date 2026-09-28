@@ -422,8 +422,7 @@ if st.session_state.bc_answer and st.session_state.bc_answer[0] == idx:
     if answer:
         st.success(f'**True**: `{asked_query}` is entailed, so ({qr},{qc}) = {qv}. ({took})')
     else:
-        st.error(f'**False**: `{asked_query}` is not entailed, so ({qr},{qc}) is not {qv}. ({took})')
-
+        st.warning(f'**False**: `{asked_query}` is not entailed by this KB. ' f'({took})')
 
 # --- 4. Reasoning trace ("tutor mode") ---
 st.header('4. Tutor mode')
